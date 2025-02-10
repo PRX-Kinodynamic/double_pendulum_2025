@@ -1,0 +1,26 @@
+cmake_policy(SET CMP0167 NEW)
+
+find_package(ML4KP REQUIRED HINTS $ENV{DIRTMP_PATH}/install/lib/cmake/ML4KP)
+
+message("ML4KP_INCLUDE_DIR: ${ML4KP_INCLUDE_DIR}")
+file(GLOB_RECURSE HEADERES_ML4KP RELATIVE ${CMAKE_SOURCE_DIR} ./*.hpp)
+# file(GLOB_RECURSE SRC_ML4KP  ./*.cpp)
+
+
+set(${PROJECT_NAME}_HEADERS "${${PROJECT_NAME}_HEADERS};${HEADERES_ML4KP}" PARENT_SCOPE)
+
+add_library(ML4KP_Interface INTERFACE)
+
+
+
+target_include_directories(ML4KP_Interface INTERFACE
+														"$<BUILD_INTERFACE:${ML4KP_INCLUDE_DIR};${CMAKE_CURRENT_SOURCE_DIR}>"
+														"$<INSTALL_INTERFACE:${ML4KP_INCLUDE_DIR};${CMAKE_INSTALL_INCLUDEDIR}>"
+														)
+
+
+target_link_libraries(ML4KP_Interface INTERFACE ML4KP::ML4KP )
+
+set(${PROJECT_NAME}_LIBRARIES "${${PROJECT_NAME}_LIBRARIES};ML4KP_Interface" PARENT_SCOPE)
+
+add_subdirectory(executables)

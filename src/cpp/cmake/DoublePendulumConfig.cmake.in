@@ -1,0 +1,18 @@
+@PACKAGE_INIT@
+
+#include("@CMAKE_INSTALL_PREFIX@/lib/.cmake")
+
+find_package(Eigen3 CONFIG REQUIRED)
+find_package(YAMLCPP NAMES Yaml-cpp YamlCpp yaml-cpp)
+
+foreach(LIBRARY @DoublePendulum_LIBRARIES@)
+	include("@PACKAGE_CMAKE_INSTALL_LIBDIR@/cmake/@CMAKE_PROJECT_NAME@/${LIBRARY}Targets.cmake")
+endforeach()
+
+include("@PACKAGE_CMAKE_INSTALL_LIBDIR@/cmake/@CMAKE_PROJECT_NAME@/DoublePendulumTargets.cmake")
+
+set_and_check(@CMAKE_PROJECT_NAME@_INCLUDE_DIR "@PACKAGE_CMAKE_INSTALL_INCLUDEDIR@")
+set_and_check(@CMAKE_PROJECT_NAME@_LIBRARY_DIR "@PACKAGE_CMAKE_INSTALL_LIBDIR@")
+
+check_required_components(@CMAKE_PROJECT_NAME@)
+
