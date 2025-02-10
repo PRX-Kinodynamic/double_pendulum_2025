@@ -653,7 +653,7 @@ class Simulator:
         controller = par_dict["controller"]
         integrator = par_dict["integrator"]
         anim_dt = par_dict["anim_dt"]
-        trail_len = 25  # length of the trails
+        trail_len = 10000000  # length of the trails
         sim_steps = int(anim_dt / dt)
         dt_index = int(self.t / dt)
 
@@ -780,8 +780,8 @@ class Simulator:
         save_video=False,
         video_name="pendulum_swingup.mp4",
         anim_dt=0.02,
-        plot_horizontal_line=False,
-        horizontal_line_height=0.0,
+        plot_horizontal_line=True,
+        horizontal_line_height=0.45,
         scale=1.0,
     ):
         """
@@ -900,8 +900,8 @@ class Simulator:
                     color=colors[link],
                     markersize=24 * scale,
                     markerfacecolor=colors_trails[link % len(colors_trails)],
-                    lw=2 * scale,
-                    markevery=10000,
+                    lw= 2 * scale,
+                    markevery=10000000,
                     markeredgecolor="None",
                 )
                 self.animation_plots.append(trail_plot)
