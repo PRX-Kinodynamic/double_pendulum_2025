@@ -12,35 +12,10 @@
 
 #include <prx/visualization/three_js_group.hpp>
 #include "ML4KP_interface/simulation/acrobot.hpp"
+#include "ML4KP_interface/simulation/utils.hpp"
 
-struct acrobot_delta_t;
-using LQR = prx::simulation::lqr_controller_t<5, -1, acrobot_delta_t>;
+using LQR = prx::simulation::lqr_controller_t<5, -1>;
 using LQRptr = std::shared_ptr<LQR>;
-
-struct acrobot_delta_t
-{
-  using Scalar = double;
-  static constexpr Eigen::Index NInputs{ Eigen::Dynamic };
-
-  template <typename EpsilonMatrix>
-  static LQR::VectorX add(const LQR::VectorX& state, const EpsilonMatrix& epsilon)  // no-lint
-  {
-    LQR::VectorX vec{ state + epsilon };
-    // atan2 \in [-pi,pi], but the system \in [0,2pi]
-    const double th0{ vec[0] - prx::constants::pi };
-    const double th1{ vec[1] - prx::constants::pi };
-    PRX_DBG_VARS(th0, th1);
-    PRX_DBG_VARS(std::atan2(std::sin(th1), std::cos(th1)));
-    vec[0] = std::atan2(std::sin(th0), std::cos(th0)) + prx::constants::pi;
-    vec[1] = std::atan2(std::sin(th1), std::cos(th1)) + prx::constants::pi;
-
-    PRX_DBG_VARS(state.transpose());
-    PRX_DBG_VARS(epsilon.transpose());
-    PRX_DBG_VARS(vec.transpose());
-    return vec;
-    // return state + epslion(0, 0);
-  };
-};
 
 int main(int argc, char* argv[])
 {
@@ -49,10 +24,10 @@ int main(int argc, char* argv[])
   prx::simulation_step = 0.002;
   params["/planner/random_seed"].set(112392);
 
-  prx::system_ptr_t plant;
+  std::shared_ptr<prx::plant_t> plant;
   std::string plant_name;
 
-  LQRptr lqr;
+  // LQRptr lqr;
   if (not params.exists("plant"))
   {
     prx_throw("Need plant param: {acrobot, pendubot} ");
@@ -60,34 +35,39 @@ int main(int argc, char* argv[])
   if (params["plant"].as<>() == "acrobot")
   {
     plant_name = "acrobot_dp";
-    plant = prx::system_factory_t::create_system(plant_name, plant_name);
+    auto system_aux = prx::system_factory_t::create_system(plant_name, plant_name);
+    plant = std::dynamic_pointer_cast<prx::plant_t>(system_aux);
     prx_assert(plant != nullptr, "Plant is nullptr!");
 
-    const Eigen::Matrix4d Q{ Eigen::DiagonalMatrix<double, 4>(10.0, 10.0, 1.0, 1.0) };
-    const Eigen::Matrix<double, 1, 1> R{ Eigen::Matrix<double, 1, 1>::Identity() };
-    const Eigen::Vector4d x_goal{ { prx::constants::pi, 0.0, 0.0, 0.0 } };
-    const Eigen::Vector<double, 1> u_goal{ { 0.0 } };
+    // const Eigen::Matrix4d Q{ Eigen::DiagonalMatrix<double, 4>(1.0, 1.0, 1.0, 1.0) };
+    // const Eigen::Matrix<double, 1, 1> R{ Eigen::Matrix<double, 1, 1>::Identity() };
+    // const Eigen::Vector4d x_goal{ { prx::constants::pi, 0.0, 0.0, 0.0 } };
+    // const Eigen::Vector<double, 1> u_goal{ { 0.0 } };
 
-    PRX_DBG_VARS(Q);
-    PRX_DBG_VARS(R);
+    // LQR::Diff diff = [](const LQR::VectorX& x, const LQR::VectorX& ref)  // no-lint
+    // {
+    //   const double th0{ x[0] };
+    //   const double th1{ x[1] };
 
-    LQR::Diff diff = [](const LQR::VectorX& a, const LQR::VectorX& b)  // no-lint
-    {
-      LQR::VectorX res{ a - b };
-      res[0] = std::atan2(-std::sin(res[0]), std::cos(res[0]));
-      res[1] = std::atan2(-std::sin(res[1]), std::cos(res[1]));
-      PRX_DBG_VARS(a.transpose());
-      PRX_DBG_VARS(b.transpose());
-      PRX_DBG_VARS(res.transpose());
-      return res;
-    };
+    //   const double th0_ref{ ref[0] };
+    //   const double th1_ref{ ref[1] };
 
-    lqr = std::make_shared<LQR>(plant, "LQR", Q, R, x_goal, u_goal, diff);
-    prx_assert(lqr != nullptr, "lqr is nullptr!");
-    auto K = lqr->lqr().K();
+    //   const double dth0{ std::atan2(std::sin(th0 - th0_ref), std::cos(th0 - th0_ref)) };
+    //   const double dth1{ std::atan2(std::sin(th1 - th1_ref), std::cos(th1 - th1_ref)) };
+    //   const double dv0{ x[2] - ref[2] };
+    //   const double dv1{ x[3] - ref[3] };
 
-    PRX_DBG_VARS(K);
+    //   return Eigen::Vector4d(dth0, dth1, dv0, dv1);
+    // };
+
+    // lqr = std::make_shared<LQR>(plant, "LQR", Q, R, x_goal, u_goal, diff);
+    // prx_assert(lqr != nullptr, "lqr is nullptr!");
+    // auto K = lqr->lqr().K();
+
+    // PRX_DBG_VARS(K);
   }
+  LQRptr lqr{ double_pendulum::create_lqr(plant) };
+
   prx::world_model_t world_model({ plant }, {});
 
   world_model.create_context("context", { plant_name }, {});
@@ -121,15 +101,21 @@ int main(int argc, char* argv[])
   traj.clear();
   cond_check.reset();
   ss->copy_from(start);
+  Eigen::Vector2d rod1, ball;
+  traj.copy_onto_back(ss);
+  double t{ 0.0 };
   do
   {
     lqr->compute_controls();
     sg->propagate_once(nullptr);
     traj.copy_onto_back(ss);
 
+    plant->update_configuration();
+    ball = plant->configuration("ball").translation().head(2);
     cs->copy_to(ctrl);
+    PRX_DBG_VARS(t, ball.transpose());
     plan.copy_onto_back(ctrl, prx::simulation_step);
-
+    t += prx::simulation_step;
   } while (!cond_check.check());
   ofs_traj << traj;
   ofs_plan << plan;

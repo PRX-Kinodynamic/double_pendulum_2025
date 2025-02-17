@@ -31,7 +31,7 @@ public:
 
     state_memory = { &_x[0], &_x[1],  // no-lint
                      &_x[2], &_x[3] };
-    state_space = new prx::space_t("EEEE", state_memory, "acrobot_state");
+    state_space = new prx::space_t("RREE", state_memory, "acrobot_state");
     // state_space->set_bounds({ -9.42, -9.42, -30, -30 },  // 540 deg~= 9.42 rad
     //                         { +9.42, +9.42, +30, +30 });
     state_space->set_bounds({ -1e50, -1e50, -1e50, -1e50 },  // 540 deg~= 9.42 rad
@@ -121,6 +121,7 @@ public:
     // _x[1] += prx::constants::pi;
     // PRX_DBG_VARS(_x.transpose());
     // PRX_DBG_VARS(_u.transpose());
+
     // PRX_DBG_VARS(_xdd.transpose());
   }
 

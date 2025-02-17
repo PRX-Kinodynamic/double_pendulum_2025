@@ -1,12 +1,16 @@
+simulation_step: 0.002
+random_seed: 112392
+visualize: true 
+
 bnb: true
 use_replanning: false
 control_steps:
-  min: -2147483648
-  max: -2147483648
+  min: 100
+  max: 1000
 blossom_number: 1
 cost_multiplier: 1
 w_c: 1
 w_x: 1
 checker:
   type: time
-  value: 60
+  value: 300
