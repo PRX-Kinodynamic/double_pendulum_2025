@@ -12,7 +12,7 @@ using LQRptr = std::shared_ptr<LQR>;
 
 LQRptr create_lqr(std::shared_ptr<prx::plant_t> plant)
 {
-  const Eigen::Matrix4d Q{ Eigen::DiagonalMatrix<double, 4>(1.0, 1.0, 1.0, 1.0) };
+  const Eigen::Matrix4d Q{ Eigen::DiagonalMatrix<double, 4>(10.0, 10.0, 1.0, 1.0) };
   const Eigen::Matrix<double, 1, 1> R{ Eigen::Matrix<double, 1, 1>::Identity() };
   const Eigen::Vector4d x_goal{ { prx::constants::pi, 0.0, 0.0, 0.0 } };
   const Eigen::Vector<double, 1> u_goal{ { 0.0 } };

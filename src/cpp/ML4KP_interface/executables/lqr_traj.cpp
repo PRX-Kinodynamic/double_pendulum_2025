@@ -12,6 +12,7 @@
 
 #include <prx/visualization/three_js_group.hpp>
 #include "ML4KP_interface/simulation/acrobot.hpp"
+#include "ML4KP_interface/simulation/pendubot.hpp"
 #include "ML4KP_interface/simulation/utils.hpp"
 
 using LQR = prx::simulation::lqr_controller_t<5, -1>;
@@ -35,37 +36,18 @@ int main(int argc, char* argv[])
   if (params["plant"].as<>() == "acrobot")
   {
     plant_name = "acrobot_dp";
-    auto system_aux = prx::system_factory_t::create_system(plant_name, plant_name);
-    plant = std::dynamic_pointer_cast<prx::plant_t>(system_aux);
-    prx_assert(plant != nullptr, "Plant is nullptr!");
-
-    // const Eigen::Matrix4d Q{ Eigen::DiagonalMatrix<double, 4>(1.0, 1.0, 1.0, 1.0) };
-    // const Eigen::Matrix<double, 1, 1> R{ Eigen::Matrix<double, 1, 1>::Identity() };
-    // const Eigen::Vector4d x_goal{ { prx::constants::pi, 0.0, 0.0, 0.0 } };
-    // const Eigen::Vector<double, 1> u_goal{ { 0.0 } };
-
-    // LQR::Diff diff = [](const LQR::VectorX& x, const LQR::VectorX& ref)  // no-lint
-    // {
-    //   const double th0{ x[0] };
-    //   const double th1{ x[1] };
-
-    //   const double th0_ref{ ref[0] };
-    //   const double th1_ref{ ref[1] };
-
-    //   const double dth0{ std::atan2(std::sin(th0 - th0_ref), std::cos(th0 - th0_ref)) };
-    //   const double dth1{ std::atan2(std::sin(th1 - th1_ref), std::cos(th1 - th1_ref)) };
-    //   const double dv0{ x[2] - ref[2] };
-    //   const double dv1{ x[3] - ref[3] };
-
-    //   return Eigen::Vector4d(dth0, dth1, dv0, dv1);
-    // };
-
-    // lqr = std::make_shared<LQR>(plant, "LQR", Q, R, x_goal, u_goal, diff);
-    // prx_assert(lqr != nullptr, "lqr is nullptr!");
-    // auto K = lqr->lqr().K();
-
-    // PRX_DBG_VARS(K);
   }
+  else if (params["plant"].as<>() == "pendubot")
+  {
+    plant_name = "pendubot_dp";
+  }
+  else
+  {
+    prx_throw("Plant " << params["plant"].as<>() << " not supported.");
+  }
+  auto system_aux = prx::system_factory_t::create_system(plant_name, plant_name);
+  plant = std::dynamic_pointer_cast<prx::plant_t>(system_aux);
+  prx_assert(plant != nullptr, "Plant is nullptr!");
   LQRptr lqr{ double_pendulum::create_lqr(plant) };
 
   prx::world_model_t world_model({ plant }, {});
@@ -113,7 +95,7 @@ int main(int argc, char* argv[])
     plant->update_configuration();
     ball = plant->configuration("ball").translation().head(2);
     cs->copy_to(ctrl);
-    PRX_DBG_VARS(t, ball.transpose());
+    // PRX_DBG_VARS(t, ball.transpose(), ctrl);
     plan.copy_onto_back(ctrl, prx::simulation_step);
     t += prx::simulation_step;
   } while (!cond_check.check());
@@ -130,7 +112,7 @@ int main(int argc, char* argv[])
 
   vis_group->add_detailed_vis_infos(prx::info_geometry_t::FULL_LINE, traj, body_name, ss);
   vis_group->add_animation(traj, ss, pt);
-  vis_group->output_html("double_pendulum_lqr.html");
+  vis_group->output_html(plant_name + "_lqr.html");
 
   delete vis_group;
   return 0;

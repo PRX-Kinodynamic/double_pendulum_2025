@@ -12,6 +12,7 @@
 
 #include <prx/visualization/three_js_group.hpp>
 #include "ML4KP_interface/simulation/acrobot.hpp"
+#include "ML4KP_interface/simulation/pendubot.hpp"
 
 using LQR = prx::simulation::lqr_controller_t<>;
 using LQRptr = std::shared_ptr<LQR>;
@@ -34,9 +35,19 @@ int main(int argc, char* argv[])
   if (params["plant"].as<>() == "acrobot")
   {
     plant_name = "acrobot_dp";
-    plant = prx::system_factory_t::create_system(plant_name, plant_name);
-    prx_assert(plant != nullptr, "Plant is nullptr!");
   }
+  else if (params["plant"].as<>() == "pendubot")
+  {
+    plant_name = "pendubot_dp";
+  }
+  else
+  {
+    prx_throw("Plant " << params["plant"].as<>() << " not supported.");
+  }
+  PRX_DBG_VARS(plant_name);
+
+  plant = prx::system_factory_t::create_system(plant_name, plant_name);
+  prx_assert(plant != nullptr, "Plant is nullptr!");
   prx::world_model_t world_model({ plant }, {});
 
   world_model.create_context("context", { plant_name }, {});
@@ -85,7 +96,7 @@ int main(int argc, char* argv[])
 
   vis_group->add_detailed_vis_infos(prx::info_geometry_t::FULL_LINE, traj, body_name, ss);
   vis_group->add_animation(traj, ss, pt);
-  vis_group->output_html("double_pendulum_traj.html");
+  vis_group->output_html(plant_name + "_traj.html");
 
   delete vis_group;
   return 0;

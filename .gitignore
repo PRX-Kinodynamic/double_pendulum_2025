@@ -40,3 +40,11 @@ experiments/design_independent/data/*
 
 
 .idea/
+
+src/cpp/build/*
+src/cpp/lib/*
+*.DS_Store
+*.mp4
+ML4KP_tests/out/*
+leaderboard/acrobot/robustness_v1/data.bk*
+leaderboard/acrobot/simulation_v3/*
