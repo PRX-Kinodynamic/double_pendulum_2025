@@ -14,6 +14,8 @@
 #include "ML4KP_interface/simulation/acrobot.hpp"
 #include "ML4KP_interface/simulation/utils.hpp"
 // using namespace prx;
+using prx::utilities::convert_to;
+
 double dist_to_goal(prx::space_point_t xF)
 {
   static const Eigen::Vector4d ref(prx::constants::pi, 0.0, 0.0, 0.0);
@@ -39,6 +41,7 @@ int main(int argc, char* argv[])
   // prx::param_loader params{};
   prx::param_loader params{ argc, argv };
 
+  params["epsilon"].set(5.0);
   std::string plant_in{};
   std::string planner_in{};
   if (params.exists("planner_file"))
@@ -66,7 +69,8 @@ int main(int argc, char* argv[])
 
   params.print();
   prx::simulation_step = 0.002;
-  prx::init_random(params["/planner/random_seed"].as<int>());
+  const int seed{ params["/planner/random_seed"].as<int>() };
+  prx::init_random(seed);
 
   const std::string plant_name{ params["/plant/name"].as<>() };
 
@@ -120,13 +124,31 @@ int main(int argc, char* argv[])
   // TODO: Include more complex goal region
   // aorrt_query.goal_region_radius = params["/plant/goal/radius"].as<double>();
 
+  prx::condition_check_t lqr_cond_check("sim_time", 5.0);  // 5 secs
+  prx::space_point_t lqr_final_pt{ ss->make_point() };
+  double_pendulum::LQRptr lqr{ double_pendulum::create_lqr(plant) };
+  const double epsilon{ params["epsilon"].as<double>() };
+
   // Alternatively, change the goal_check function
   aorrt_query.goal_check = [&](prx::space_point_t pt) {
     ss->copy_from(pt);
     plant->update_configuration();
     const double y{ plant->configuration("ball").translation()[1] };
     // PRX_DBG_VARS(y, pt);
-    return y > 0.45 and Vec(pt).tail(2).norm() < 5.0;
+    // const bool lqr_semi_roa_reached{ y > 0.45 and Vec(pt).tail(2).norm() < epsilon };
+    const bool goal_region_reached{ y > 0.45 };
+    if (goal_region_reached)
+    {
+      lqr_cond_check.reset();
+      sg->propagate(pt, lqr, lqr_cond_check, lqr_final_pt);
+      const double final_dist{ dist_to_goal(lqr_final_pt) };
+      // PRX_DBG_VARS(pt, lqr_final_pt, final_dist);
+      return final_dist < 0.01;
+    }
+    else
+    {
+      return false;
+    }
   };
 
   aorrt.link_and_setup_spec(&aorrt_spec);
@@ -135,32 +157,75 @@ int main(int argc, char* argv[])
 
   prx::condition_check_t checker(params["/planner/checker"]);
 
-  aorrt.resolve_query(&checker);
+  // aorrt.resolve_query(&checker);
+
+  std::vector<std::vector<double>> all_stats;
+  const int repeats{ params["/planner/checker/repeats"].as<int>() };
+
+  const double accepted_cost{ params["/planner/min_cost"].as<double>() };
+  int sln_repeats{ 0 };
+  double curr_cost{ std::numeric_limits<double>::infinity() };
+  // for (int i = 0; i < repeats; i++)
+  while (sln_repeats < repeats and curr_cost > accepted_cost)
+  {
+    checker.reset();
+    aorrt.resolve_query(&checker);
+    const std::vector<double> stats{ aorrt.get_statistics() };
+    all_stats.push_back(stats);
+    curr_cost = stats[3];
+    if (std::isfinite(curr_cost))
+    {
+      // PRX_DBG_VARS(curr_cost);
+      sln_repeats++;
+    }
+    // PRX_DBG_VARS(stats);
+  }
+  // PRX_DBG_VARS(sln_repeats, curr_cost);
+
   aorrt.fulfill_query();
 
-  PRX_DBG_VARS(aorrt.get_statistics());
+  // PRX_DBG_VARS(aorrt.get_statistics());
   // params.print();
 
   prx::trajectory_t final_traj(ss);
-  double_pendulum::LQRptr lqr{ double_pendulum::create_lqr(plant) };
 
-  prx::condition_check_t cond_check("sim_time", 5.0);  // 5 secs
+  // prx::condition_check_t lqr_cond_check("sim_time", 5.0);  // 5 secs
 
-  sg->propagate(aorrt_query.solution_traj.back(), lqr, cond_check, final_traj);
-
-  if (dist_to_goal(final_traj.back()) < 0.01)
+  if (aorrt_query.solution_traj.size() > 0)
   {
-    const std::string MSG{ "Goal reached LQR ROA" };
-    PRX_DBG_VARS(MSG);
+    lqr_cond_check.reset();
+    sg->propagate(aorrt_query.solution_traj.back(), lqr, lqr_cond_check, final_traj);
+    const double final_dist{ dist_to_goal(final_traj.back()) };
+    // PRX_DBG_VARS(aorrt_query.solution_traj.back(), final_traj.back(), final_dist);
+    if (final_dist < 0.01)
+    {
+      const std::string MSG{ "Goal reached LQR ROA" };
+      PRX_DBG_VARS(MSG);
 
-    const std::string out_dir{ params["out_dir"].as<>() };
-    const std::string ts{ timestamp() };
-    aorrt_query.solution_traj.to_file(out_dir + "/traj_" + ts + ".txt");
-    aorrt_query.solution_plan.to_file(out_dir + "/plan_" + ts + ".txt");
+      const std::string out_dir{ params["out_dir"].as<>() };
+      const std::string ts{ timestamp() + "_" + convert_to<std::string>(seed) };
+      aorrt_query.solution_traj.to_file(out_dir + "/traj_" + ts + ".txt");
+      aorrt_query.solution_plan.to_file(out_dir + "/plan_" + ts + ".txt");
+      std::ofstream ofs(out_dir + "/stats_" + ts + ".txt");
+      for (auto stats : all_stats)
+      {
+        for (auto s : stats)
+        {
+          ofs << s << " ";
+        }
+        ofs << "\n";
+      }
+      ofs.close();
+    }
+    else
+    {
+      const std::string MSG{ "Goal NOT reached LQR ROA" };
+      PRX_DBG_VARS(MSG);
+    }
   }
   else
   {
-    const std::string MSG{ "Goal NOT reached LQR ROA" };
+    const std::string MSG{ "No solution found" };
     PRX_DBG_VARS(MSG);
   }
   prx::three_js_group_t* vis_group{ new prx::three_js_group_t({ plant }, {}) };

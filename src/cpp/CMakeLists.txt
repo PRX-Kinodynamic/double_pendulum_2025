@@ -25,6 +25,7 @@ if (UNIX)
 	endif ()
 endif (UNIX)
 
+list(APPEND BUILD_FLAGS "-march=native")
 
 add_definitions(${BUILD_FLAGS})
 
@@ -52,7 +53,7 @@ include_directories(".")
 
 add_subdirectory(controllers/ilqr)
 add_subdirectory(model)
-add_subdirectory(ML4KP_Interface)
+add_subdirectory(ML4KP_interface)
 # add_subdirectory(python)
 add_subdirectory(simulator)
 add_subdirectory(utils)
