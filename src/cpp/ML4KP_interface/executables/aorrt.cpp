@@ -12,6 +12,7 @@
 #include <prx/visualization/three_js_group.hpp>
 
 #include "ML4KP_interface/simulation/acrobot.hpp"
+#include "ML4KP_interface/simulation/pendubot.hpp"
 #include "ML4KP_interface/simulation/utils.hpp"
 // using namespace prx;
 using prx::utilities::convert_to;
@@ -240,7 +241,7 @@ int main(int argc, char* argv[])
     vis_group->add_vis_infos(prx::info_geometry_t::LINE, aorrt_query.tree_visualization, body_name, ss);
     vis_group->add_detailed_vis_infos(prx::info_geometry_t::FULL_LINE, viz_traj, body_name, ss);
     vis_group->add_animation(viz_traj, ss, aorrt_query.start_state);
-    vis_group->output_html("double_pendulum_aorrt.html");
+    vis_group->output_html(plant_name + "_aorrt.html");
   }
   delete vis_group;
 }

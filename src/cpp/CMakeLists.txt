@@ -10,6 +10,8 @@ set(${PROJECT_NAME}_VERSION 0.1)
 
 cmake_policy(SET CMP0079 NEW)
 
+set(BUILD_WITH_SIMD ON CACHE BOOL "Set ON/TRUE for building with SIMD (vectorized) operations")
+
 if (CMAKE_BUILD_TYPE MATCHES Release)
 	set(BUILD_FLAGS "-O3")
   add_definitions(-DRELEASE_BUILD)
@@ -25,7 +27,9 @@ if (UNIX)
 	endif ()
 endif (UNIX)
 
-list(APPEND BUILD_FLAGS "-march=native")
+if(BUILD_WITH_SIMD)
+	list(APPEND BUILD_FLAGS "-march=native")
+endif(BUILD_WITH_SIMD)
 
 add_definitions(${BUILD_FLAGS})
 
