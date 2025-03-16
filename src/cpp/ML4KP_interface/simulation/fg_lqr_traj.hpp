@@ -3,11 +3,13 @@
 #include <gtsam/linear/GaussianBayesNet.h>
 #include <prx/factor_graphs/factors/prx_propagation_factor.hpp>
 #include <prx/factor_graphs/utilities/default_parameters.hpp>
+#include <prx/factor_graphs/utilities/dbg_utills.hpp>
 
 namespace double_pendulum
 {
 using GraphValues = std::pair<gtsam::NonlinearFactorGraph, gtsam::Values>;
 using GainMap = std::map<gtsam::Key, Eigen::Matrix<double, 1, 4>>;
+using CostToGoMap = std::map<gtsam::Key, Eigen::Matrix<double, 4, 4>>;
 using SF = prx::fg::symbol_factory_t;
 
 template <typename State, typename Goal>
@@ -42,6 +44,29 @@ public:
   //   return prediction;
   // }
 };
+
+// Take a start state, controller and a plant and get the equivalent plan
+template <typename StartState, typename LqrPtr, typename SystemGroupPtr>
+void lqr_to_plan(const StartState x0, LqrPtr lqr, prx::condition_check_t& cond, prx::trajectory_t& traj,
+                 prx::plan_t& plan, SystemGroupPtr sg)
+{
+  cond.reset();
+  prx::space_t* ss{ sg->get_state_space() };
+  prx::space_t* cs{ sg->get_control_space() };
+  prx::space_point_t ui{ cs->make_point() };
+
+  ss->copy_from(x0);
+  const Eigen::Vector4d goal{ Eigen::Vector4d(prx::constants::pi, 0.0, 0.0, 0.0) };
+  do
+  {
+    lqr->compute_controls();
+    sg->propagate_once(nullptr);
+    cs->copy_to(ui);
+    traj.copy_onto_back(ss);
+    plan.copy_onto_back(ui, prx::simulation_step);
+  } while (difference(Vec(traj.back()), goal).norm() > 1.0);
+  // } while (not cond.check());
+}
 
 template <typename Graph>
 Eigen::Matrix<double, 4, 4> compute_S(Graph& graph, const gtsam::Key key)
@@ -105,25 +130,40 @@ void compute_K_S(Graph& graph, const Xkeys& X, const Ukeys& U, Sout& Ss, Kout& K
     const gtsam::Key keyX0{ X[i] };
     const gtsam::Key keyU01{ U[i] };
 
-    // const std::string strKeyX1{ SF::formatter(X[i + 1]) };
-    // const std::string strKeyX0{ SF::formatter(X[i]) };
-    // const std::string strKeyU01{ SF::formatter(U[i]) };
+    const std::string strKeyX1{ SF::formatter(keyX1) };
+    const std::string strKeyX0{ SF::formatter(keyX0) };
+    const std::string strKeyU01{ SF::formatter(keyU01) };
 
     // PRX_DBG_VARS(strKeyX1, strKeyX0, strKeyU01);
     gtsam::Ordering ordering{};
     ordering.push_back(keyX1);
     ordering.push_back(keyU01);
 
-    // std::pair<boost::shared_ptr<BayesNetType>, boost::shared_ptr<FactorGraphType> >
-    // bayes_net, marginalized_fg = marginalized_fg.eliminatePartialSequential(ordering);
-    auto pair_eliminated = marginalized_fg->eliminatePartialSequential(ordering);
-    marginalized_fg = pair_eliminated.second;
-    Ss[keyX0] = compute_S(marginalized_fg, keyX0);
-
-    const Eigen::MatrixXd R{ pair_eliminated.first->back()->R().matrix() };
-    const Eigen::MatrixXd S{ pair_eliminated.first->back()->S().matrix() };
-
-    Ks[keyX1] = R.triangularView<Eigen::Upper>().solve(S);
+    try
+    {
+      // std::pair<boost::shared_ptr<BayesNetType>, boost::shared_ptr<FactorGraphType> >
+      // bayes_net, marginalized_fg = marginalized_fg.eliminatePartialSequential(ordering);
+      auto pair_eliminated = marginalized_fg->eliminatePartialSequential(ordering);
+      marginalized_fg = pair_eliminated.second;
+      // pair_eliminated.first->print("pair_eliminated", SF::formatter);
+      // marginalized_fg->print("marginalized_fg", SF::formatter);
+      Ss[keyX0] = compute_S(marginalized_fg, keyX0);
+      const Eigen::MatrixXd R{ pair_eliminated.first->back()->R().matrix() };
+      const Eigen::MatrixXd S{ pair_eliminated.first->back()->S().matrix() };
+      const Eigen::MatrixXd K{ R.triangularView<Eigen::Upper>().solve(S) };
+      // PRX_DBG_VARS(strKeyX0);
+      // PRX_DBG_VARS(Ss[keyX0]);
+      // PRX_DBG_VARS(R);
+      // PRX_DBG_VARS(S);
+      // PRX_DBG_VARS(K);
+      Ks[keyX0] = K;
+    }
+    catch (gtsam::IndeterminantLinearSystemException e)
+    {
+      const std::string msg{ "[EXCEPTION] Var:" + SF::formatter(e.nearbyVariable()) + "\n" };
+      prx::fg::indeterminant_linear_system_helper(marginalized_fg);
+      std::cout << msg << std::string(e.what()) << std::endl;
+    }
   }
 }
 
@@ -137,32 +177,31 @@ bool check_traj_plan(prx::trajectory_t& traj, prx::plan_t& plan, std::shared_ptr
   return difference(Vec(traj.back()), Vec(traj_test.back())).norm() < 0.5;
 }
 
-GainMap create_lqr_fg(prx::trajectory_t& traj, prx::plan_t& plan, gtsam::Values& values, const std::string plant_name)
+void create_fg(gtsam::NonlinearFactorGraph& graph, gtsam::Values& values, prx::trajectory_t& traj, prx::plan_t& plan,
+               std::vector<gtsam::Key>& Xkeys, std::vector<gtsam::Key>& Ukeys, const std::string plant_name,
+               const int step_size)
 {
-  using State = Eigen::Vector4d;
-  using Control = Eigen::Vector<double, 1>;
   using Propagation = double_pendulum_propagation_t;
-  gtsam::NonlinearFactorGraph graph;
-
-  std::vector<gtsam::Key> Xkeys;
-  std::vector<gtsam::Key> Ukeys;
-
-  gtsam::noiseModel::Base::shared_ptr Q_noise_model{ gtsam::noiseModel::Isotropic::Sigma(4, 1) };
-  gtsam::noiseModel::Base::shared_ptr R_noise_model{ gtsam::noiseModel::Isotropic::Sigma(1, 1) };
-  gtsam::noiseModel::Base::shared_ptr noise_integrator_model{ gtsam::noiseModel::Isotropic::Sigma(4, 1) };
 
   std::size_t i{ 0 };
-  double ti{ 0.0 };
+  // double ti{ 0.0 };
   std::size_t iF{ plan.size() };
   const double tot_duration{ plan.duration() };
-  for (auto step : plan)
+
+  const Eigen::Vector4d sigmas(1, 1, 1, 1);
+  gtsam::noiseModel::Base::shared_ptr Q_noise_model{ gtsam::noiseModel::Diagonal::Sigmas(sigmas) };
+  gtsam::noiseModel::Base::shared_ptr R_noise_model{ gtsam::noiseModel::Isotropic::Sigma(1, 1) };
+  gtsam::noiseModel::Base::shared_ptr noise_integrator_model{ gtsam::noiseModel::Isotropic::Sigma(4, 1) };
+  // const int step_size{ 3 };
+  const double step_duration{ step_size * prx::simulation_step };
+  for (double ti = 0; ti < tot_duration; ti += step_duration)
   {
     const std::size_t parent_id{ i };
-    const std::size_t target_id{ i + 1 };
-
-    PRX_DBG_VARS(parent_id, target_id, iF);
-    if (parent_id < iF)
+    const std::size_t target_id{ i + step_size };
+    // PRX_DBG_VARS(ti, i);
+    if (ti + step_duration < tot_duration)
     {
+      auto step_control = plan.at(ti);
       const gtsam::Key key_xt0{ SF::create_hashed_symbol("X^{", parent_id, "}") };
       const gtsam::Key key_xt1{ SF::create_hashed_symbol("X^{", target_id, "}") };
       const gtsam::Key key_u{ SF::create_hashed_symbol("U^{", parent_id, "}_{", target_id, "}") };
@@ -170,16 +209,14 @@ GainMap create_lqr_fg(prx::trajectory_t& traj, prx::plan_t& plan, gtsam::Values&
       Xkeys.push_back(key_xt0);
       Ukeys.push_back(key_u);
 
-      PRX_DBG_VARS(step);
-      const double duration{ step.duration };
-      const Eigen::Vector<double, 1> u{ Vec(step.control) };
+      const double duration{ step_duration };
+      const Eigen::Vector<double, 1> u{ Vec(step_control) };
       const double norm_dur0{ ti / tot_duration };
       const double norm_dur1{ (ti + duration) / tot_duration };
       // PRX_DBG_VARS(ti, duration, ti + duration, plan.duration(), norm_dur, norm_dur <= 1.0)
       const Eigen::Vector4d x0{ Vec(traj.at(norm_dur0, true)) };
       const Eigen::Vector4d x1{ Vec(traj.at(norm_dur1, true)) };
 
-      PRX_DBG_VARS(x0.transpose(), x1.transpose(), u);
       values.insert(key_xt0, x0);
       // values.insert_or_assign(key_xt1, x1);
       values.insert(key_u, u);
@@ -188,53 +225,61 @@ GainMap create_lqr_fg(prx::trajectory_t& traj, prx::plan_t& plan, gtsam::Values&
 
       graph.addPrior(key_xt0, x0, Q_noise_model);
       graph.addPrior(key_u, u, R_noise_model);
-      ti = ti + duration;
+      // ti = ti + duration;
     }
-    if (target_id == iF)
+    if (ti + step_duration >= tot_duration)
     {
+      // PRX_DBG_VARS(ti, target_id);
+      auto step_control = plan.at(ti);
+      const double dt{ tot_duration - ti };
+      const Eigen::Vector<double, 1> u{ Vec(step_control) };
+      const gtsam::Key key_xt0{ SF::create_hashed_symbol("X^{", parent_id, "}") };
       const gtsam::Key key_xF{ SF::create_hashed_symbol("X^{", target_id, "}") };
+      const gtsam::Key key_u{ SF::create_hashed_symbol("U^{", parent_id, "}_{", target_id, "}") };
+      const double norm_dur0{ ti / tot_duration };
+      const Eigen::Vector4d x0{ Vec(traj.at(norm_dur0, true)) };
       const Eigen::Vector4d xF{ Vec(traj.back()) };
+      values.insert(key_u, u);
+      values.insert(key_xt0, x0);
       values.insert(key_xF, xF);
+      Ukeys.push_back(key_u);
+      Xkeys.push_back(key_xt0);
       Xkeys.push_back(key_xF);
+      graph.emplace_shared<Propagation>(key_xF, key_xt0, key_u, noise_integrator_model, dt, plant_name);
+      graph.addPrior(key_xt0, x0, Q_noise_model);
       graph.addPrior(key_xF, xF, Q_noise_model);
     }
-    i++;
+    // PRX_DBG_VARS(ti, parent_id, target_id);
+    i += step_size;
   }
-  // params["FG/LM"] = prx::fg::levenberg_marquardt::default_params();
-  gtsam::LevenbergMarquardtParams lm_params{ prx::fg::default_levenberg_marquardt_parameters() };
+}
 
-  // graph.printErrors(values, "Graph", SF::formatter);
+void create_lqr_fg(gtsam::NonlinearFactorGraph& graph, gtsam::Values& values, std::vector<gtsam::Key>& Xkeys,
+                   std::vector<gtsam::Key>& Ukeys, GainMap& Ks, CostToGoMap& Ss)
+{
+  gtsam::LevenbergMarquardtParams lm_params{ prx::fg::default_levenberg_marquardt_parameters() };
   gtsam::LevenbergMarquardtOptimizer optimizer(graph, values, lm_params);
   gtsam::Values result{ optimizer.optimize() };
 
-  // std::vector<Eigen::Vector3d> fg_trajs;
-  // for (auto iter = edges_iters.first; iter != edges_iters.second; iter++)
-  // {
-  //   const std::shared_ptr<prx::tree_edge_t> edge{ *iter };
-  //   const std::size_t idx{ edge->get_index() };
-
-  //   const gtsam::Key key_xt{ SF::create_hashed_symbol("X^{", idx, "}") };
-
-  //   const State xt{ result.at<State>(key_xt) };
-  //   fg_trajs.push_back(xt);
-  // }
-  GainMap Ks;  // u = -k X ==>  (1x1)= (1x4) (4x1)
-  std::map<gtsam::Key, Eigen::MatrixXd> Ss;
+  // result.print("values", SF::formatter);
+  // graph.printErrors(result, "graph", SF::formatter);
+  // GainMap Ks;  // u = -k X ==>  (1x1)= (1x4) (4x1)
+  // std::map<gtsam::Key, Eigen::MatrixXd> Ss;
 
   auto linearized_graph = graph.linearize(result);
   compute_K_S(linearized_graph, Xkeys, Ukeys, Ss, Ks);
 
-  return Ks;
+  // return Ks;
 }
 
 template <typename Grid, typename Ks, typename SystemGroupPtr>
 bool check_lqr_traj(gtsam::Values& values, Grid& grid, const prx::plan_t& plan, Ks& ks, SystemGroupPtr sg)
 {
   // values.print("Vals", SF::formatter);
-  for (auto K_pair : ks)
-  {
-    PRX_DBG_VARS(SF::formatter(K_pair.first), K_pair.second);
-  }
+  // for (auto K_pair : ks)
+  // {
+  //   PRX_DBG_VARS(SF::formatter(K_pair.first), K_pair.second);
+  // }
   using State = Eigen::Vector4d;
   using Control = Eigen::Vector<double, 1>;
   using Gain = Eigen::RowVector<double, 4>;
@@ -252,7 +297,7 @@ bool check_lqr_traj(gtsam::Values& values, Grid& grid, const prx::plan_t& plan, 
     const gtsam::Key key_xt1{ SF::create_hashed_symbol("X^{", target_id, "}") };
     State xt{ values.at<State>(key_xt0) };
     ss->copy_from(xt);
-    PRX_DBG_VARS(key_xt0, key_xt1);
+    // PRX_DBG_VARS(key_xt0, key_xt1);
 
     const State xgoal{ values.at<State>(key_xt1) };
     tau = difference(xt, xgoal);
@@ -276,8 +321,8 @@ bool check_lqr_traj(gtsam::Values& values, Grid& grid, const prx::plan_t& plan, 
       tau = difference(xt, xgoal);
       goal_reached = tau.norm() < 1e-3;
       timeout = ti > 2.50;
-      PRX_DBG_VARS(ti, goal_reached, u, K, tau.transpose());
-      PRX_DBG_VARS(xt.transpose(), xgoal.transpose());
+      // PRX_DBG_VARS(ti, goal_reached, u, K, tau.transpose());
+      // PRX_DBG_VARS(xt.transpose(), xgoal.transpose());
     } while (not goal_reached and not timeout);
 
     if (not goal_reached)

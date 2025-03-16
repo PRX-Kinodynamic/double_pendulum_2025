@@ -164,139 +164,64 @@ int main(int argc, char* argv[])
     { 0.0, 0.0, 0.0, +cell_length[3] }, { 0.0, 0.0, 0.0, -cell_length[3] }
   };
 
-  PRX_DEBUG_PRINT
-  auto line_to_element = [](const std::vector<std::string> line) {
-    Element element;
-    for (int i = 0; i < 8; ++i)
-    {
-      element[i] = convert_to<double>(line[i]);
-    }
-    return element;
-  };
+  Grid grid(min, max, cell_length);
 
-  // Grid lqr_grid(params["grid/filename"].as<>(), line_to_element);
-  PRX_DEBUG_PRINT
+  // prx::trajectory_t traj(ss);
+  // prx::plan_t plan(cs);
 
-  std::set<std::size_t> visited;
-
-  // Current, local goal
-
-  State goal(prx::constants::pi, 0.0, 0.0, 0.0);
-  prx::space_point_t x0{ ss->make_point(min) };
-
-  prx::trajectory_t traj(ss);
-  prx::plan_t plan(cs);
-  prx::plan_t lqr_plan(cs);
-
-  // const std::string file_id{ "250311_232304_146225553" };
-  // const std::string file_id{ "250312_012633_25525950" };
-  // const std::string file_id{ "250311_221753_593446886" }; <--
-  const std::string file_id{ params["file_id"].as<>() };
-  const std::string dir{ "/Users/Gary/pracsys/double_pendulum/src/cpp/out/" };
-  traj.from_file(dir + "/traj_" + file_id + ".txt");
-  plan.from_file(dir + "/plan_" + file_id + ".txt");
-  PRX_DBG_VARS(plan);
-  PRX_DBG_VARS(traj.front());
-
-  const bool traj_match{ double_pendulum::check_traj_plan(traj, plan, sg) };
-  prx_assert(traj_match, "Traj / plan do not match");
-
-  double_pendulum::lqr_query_t lqr_query;
-  lqr_query.Q = Eigen::DiagonalMatrix<double, 4>(10.0, 10.0, 1.0, 1.0);
-  prx::trajectory_t lqr_final_traj(ss);
-  double_pendulum::LQRptr lqr{ double_pendulum::create_lqr(plant, lqr_query) };
-  prx::condition_check_t lqr_cond_check("sim_time", 5.0);  // 5 secs
-  lqr_cond_check.reset();
-  // sg->propagate(traj.back(), lqr, lqr_cond_check, lqr_final_traj);
-  // double_pendulum::lqr_to_plan(traj.back(), lqr, lqr_cond_check, lqr_final_traj, lqr_plan, sg);
-  // traj += lqr_final_traj;
-  // plan += lqr_plan;
-  // PRX_DBG_VARS(plan);
+  // const bool traj_match{ double_pendulum::check_traj_plan(traj, plan, sg) };
+  // prx_assert(traj_match, "Traj / plan do not match");
 
   gtsam::Values values;
   gtsam::NonlinearFactorGraph graph;
   std::vector<gtsam::Key> Xkeys;
   std::vector<gtsam::Key> Ukeys;
-  const int step_size{ 2 };
 
-  double_pendulum::create_fg(graph, values, traj, plan, Xkeys, Ukeys, plant_name, step_size);
+  State state{ State::Zero() };
+  ss->copy(state, params["state"].as<std::vector<double>>());
+  using SF = prx::fg::symbol_factory_t;
+  using Propagation = double_pendulum::double_pendulum_propagation_t;
 
-  // graph.print("graph", double_pendulum::SF::formatter);
-  // values.print("values", double_pendulum::SF::formatter);
-  double_pendulum::SF::symbols_to_file(dir + "/factor_graph_symbols.txt");
+  std::size_t i{ 0 };
+  const double duration{ 0.1 };
+  const gtsam::Key key_xF{ SF::create_hashed_symbol("X^{", 'F', "}") };
+  const gtsam::Key key_u{ SF::create_hashed_symbol("U", 'F') };
+  gtsam::noiseModel::Base::shared_ptr noise_integrator_model{ gtsam::noiseModel::Isotropic::Sigma(4, 1) };
+  for (auto vi : grid(state)->vertices())
+  {
+    const gtsam::Key key_xi{ SF::create_hashed_symbol("X^{", i, "}") };
+    values.insert(key_xi, vi);
+    graph.emplace_shared<Propagation>(key_xF, key_xi, key_u, noise_integrator_model, duration, plant_name);
+    graph.addPrior(key_xi, vi);
+    i++;
+  }
+  const gtsam::Key key_xc{ SF::create_hashed_symbol("X^{", 'c', "}") };
+  values.insert(key_xc, state);
+  graph.addPrior(key_xc, state);
+  PRX_DEBUG_PRINT
+  values.insert(key_u, Eigen::Vector<double, 1>(1.0));
+  PRX_DEBUG_PRINT
+  const State next{ state + cell_length };
+  values.insert(key_xF, next);
+  graph.addPrior(key_xF, next);
+  PRX_DEBUG_PRINT
+  graph.emplace_shared<Propagation>(key_xF, key_xc, key_u, noise_integrator_model, duration, plant_name);
+  Xkeys.push_back(key_xc);
+  Xkeys.push_back(key_xF);
+  Ukeys.push_back(key_u);
+
+  // double_pendulum::create_fg(graph, values, traj, plan, Xkeys, Ukeys, plant_name);
+  graph.print("graph", SF::formatter);
+
   double_pendulum::GainMap Ks;
   double_pendulum::CostToGoMap Ss;
   double_pendulum::create_lqr_fg(graph, values, Xkeys, Ukeys, Ks, Ss);
 
-  PRX_DBG_VARS(Ks.size(), Ss.size(), plan.duration());
-  std::size_t idx{ 0 };
-  State xi(Vec(traj.front()));
-  double ti{ 0.0 };
-
-  xi = xi + Eigen::Vector4d::Random() * 0.01;
-  PRX_DBG_VARS(traj.front(), xi.transpose());
-  ss->copy_from(xi);
-  prx::trajectory_t fg_traj(ss);
-  // fg_traj.push_back(xi);
-  fg_traj.copy_onto_back(ss);
-  std::ofstream ofs(dir + "/" + plant_name + "_" + file_id + "_lqr_traj.txt");
-  for (int i = 0; i < traj.size() - 1; ++i)
+  for (auto K_pair : Ks)
   {
-    if (i % step_size == 0)
-    {
-      idx = std::min(idx + step_size, traj.size() - 1);
-    }
-    // PRX_DBG_VARS(idx, ti);
-
-    const gtsam::Key key_xt0{ double_pendulum::SF::create_hashed_symbol("X^{", idx, "}") };
-    const State xd{ double_pendulum::difference(Vec(fg_traj.back()), Vec(traj[idx])) };
-    const Control du{ -Ks[key_xt0] * xd };
-    const Control u{ du + Vec(plan.at(ti)) };
-
-    ofs << traj[idx] << " ";
-    ofs << plan.at(ti) << " ";
-    ofs << Ks[key_xt0] << "\n";
-
-    cs->copy_from(u);
-    cs->enforce_bounds();
-    sg->propagate_once();
-    // ss->copy_to(xi);
-    fg_traj.copy_onto_back(ss);
-    // PRX_DBG_VARS(ti, du, u, fg_traj.back());
-    ti += prx::simulation_step;
+    PRX_DBG_VARS(SF::formatter(K_pair.first), K_pair.second);
   }
-  ofs.close();
-
-  PRX_DBG_VARS(traj.back(), fg_traj.back());
-
-  lqr_final_traj.clear();
-  lqr_cond_check.reset();
-  sg->propagate(traj.back(), lqr, lqr_cond_check, lqr_final_traj);
-  traj += lqr_final_traj;
-
-  lqr_final_traj.clear();
-  lqr_cond_check.reset();
-  sg->propagate(fg_traj.back(), lqr, lqr_cond_check, lqr_final_traj);
-  fg_traj += lqr_final_traj;
-
-  const std::string body_name{ plant_name + "/" + params["/plant/vis_body"].as<>() };
-
-  traj.to_file(dir + "/traj.txt");
-  fg_traj.to_file(dir + "/fg_traj.txt");
-
-  prx::three_js_group_t* vis_group{ new prx::three_js_group_t({ plant }, {}) };
-  vis_group->add_vis_infos(prx::info_geometry_t::FULL_LINE, traj, body_name, ss);
-  // vis_group->add_detailed_vis_infos(prx::info_geometry_t::FULL_LINE, traj, body_name, ss);
-  vis_group->add_animation(traj, ss, traj.front());
-  vis_group->output_html(plant_name + "_fglqr_traj_expected.html");
-
-  prx::three_js_group_t* vis_group_fg{ new prx::three_js_group_t({ plant }, {}) };
-  vis_group_fg->add_vis_infos(prx::info_geometry_t::FULL_LINE, fg_traj, body_name, ss);
-  // vis_group_fg->add_detailed_vis_infos(prx::info_geometry_t::FULL_LINE, fg_traj, body_name, ss);
-  vis_group_fg->add_animation(fg_traj, ss, fg_traj.front());
-  vis_group_fg->output_html(plant_name + "_fglqr_traj_res.html");
-  // auto valid_cell_func = [](CellPtr cell) { return not cell->element().isZero(); };
-  // lqr_grid.to_file("/Users/Gary/pracsys/double_pendulum/src/cpp/out/updated_lqr_grid.txt", valid_cell_func);
+  // const bool lqr_traj_ok{ double_pendulum::check_lqr_traj(values, lqr_grid, plan, Ks, sg) };
 
   return 0;
 }

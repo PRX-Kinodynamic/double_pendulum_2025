@@ -48,7 +48,6 @@ int main(int argc, char* argv[])
   auto system_aux = prx::system_factory_t::create_system(plant_name, plant_name);
   plant = std::dynamic_pointer_cast<prx::plant_t>(system_aux);
   prx_assert(plant != nullptr, "Plant is nullptr!");
-  LQRptr lqr{ double_pendulum::create_lqr(plant) };
 
   prx::world_model_t world_model({ plant }, {});
 
@@ -58,12 +57,22 @@ int main(int argc, char* argv[])
   std::shared_ptr<prx::system_group_t> sg{ prx::system_group(context) };
   std::shared_ptr<prx::collision_group_t> cg{ prx::collision_group(context) };
 
-  prx::condition_check_t cond_check("sim_time", 5.0);  // 5 secs
+  prx::condition_check_t cond_check("sim_time", params["sim_time"].as<double>());  // 5 secs
 
   prx::space_t* ss{ sg->get_state_space() };
   prx::space_t* cs{ sg->get_control_space() };
   prx::plan_t plan{ cs };
   prx::trajectory_t traj{ ss };
+
+  Eigen::Vector4d Qin;
+  double_pendulum::lqr_query_t lqr_query;
+  // lqr_query.x_goal = Eigen::Vector4d::Zero();
+  ss->copy(Qin, params["Q"].as<std::vector<double>>());
+  ss->copy(lqr_query.x_goal, params["goal"].as<std::vector<double>>());
+  lqr_query.Q.diagonal() = Qin;
+  lqr_query.R = Eigen::Matrix<double, 1, 1>::Identity() * params["R"].as<double>();
+  // lqr_query.Q = Eigen::DiagonalMatrix<double, 4>(1.0, 1.0, 10., 10.);
+  LQRptr lqr{ double_pendulum::create_lqr(plant, lqr_query) };
 
   const std::vector<double> start{ params["start"].as<std::vector<double>>() };
   // const std::vector<double> finish{ params["finish"].as<std::vector<double>>() };
@@ -71,13 +80,12 @@ int main(int argc, char* argv[])
   prx::space_point_t ctrl{ cs->make_point() };
   // ss->set_bounds(start, finish);
 
-  const std::string traj_filename{ params["traj"].as<>() };
-  const std::string plan_filename{ params["plan"].as<>() };
   // const double step{ params["step"].as<double>() };
 
-  std::ofstream ofs_traj(traj_filename.c_str());
-  std::ofstream ofs_plan(plan_filename.c_str());
-
+  // lqr->lqr().K() = Eigen::RowVector4d(10, 0, 0, 0);
+  PRX_DBG_VARS(lqr->lqr().A());
+  PRX_DBG_VARS(lqr->lqr().B());
+  PRX_DBG_VARS(lqr->lqr().K());
   // do
   // {
   traj.clear();
@@ -99,18 +107,30 @@ int main(int argc, char* argv[])
     plan.copy_onto_back(ctrl, prx::simulation_step);
     t += prx::simulation_step;
   } while (!cond_check.check());
-  ofs_traj << traj;
-  ofs_plan << plan;
 
-  ofs_traj.close();
-  ofs_plan.close();
+  if (params.exists("traj") and params.exists("plan"))
+  {
+    const std::string traj_filename{ params["traj"].as<>() };
+    const std::string plan_filename{ params["plan"].as<>() };
+
+    std::ofstream ofs_traj(traj_filename.c_str());
+    std::ofstream ofs_plan(plan_filename.c_str());
+
+    ofs_traj << traj;
+    ofs_plan << plan;
+
+    ofs_traj.close();
+    ofs_plan.close();
+  }
   // } while (pt->step(step));
 
   prx::three_js_group_t* vis_group = new prx::three_js_group_t({ plant }, {});
 
   const std::string body_name{ plant_name + "/ball" };
 
-  vis_group->add_detailed_vis_infos(prx::info_geometry_t::FULL_LINE, traj, body_name, ss);
+  PRX_DBG_VARS(traj.back());
+  // vis_group->add_detailed_vis_infos(prx::info_geometry_t::FULL_LINE, traj, body_name, ss);
+  vis_group->add_vis_infos(prx::info_geometry_t::FULL_LINE, traj, body_name, ss);
   vis_group->add_animation(traj, ss, pt);
   vis_group->output_html(plant_name + "_lqr.html");
 
