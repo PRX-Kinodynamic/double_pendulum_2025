@@ -22,11 +22,11 @@ Eigen::Vector4d difference(const State x, const Goal goal)
 }
 
 class double_pendulum_propagation_t
-  : public prx::fg::prx_propagation_factor_t<Eigen::Vector4d, Eigen::Vector<double, 1>>
+  : public prx::fg::plant_propagation_StateStateCtrl_factor_t<Eigen::Vector4d, Eigen::Vector<double, 1>>
 {
   using State = Eigen::Vector4d;
   using Control = Eigen::Vector<double, 1>;
-  using Base = prx::fg::prx_propagation_factor_t<State, Control>;
+  using Base = prx::fg::plant_propagation_StateStateCtrl_factor_t<State, Control>;
 
 public:
   template <typename... Args>

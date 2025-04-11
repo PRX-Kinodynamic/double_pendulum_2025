@@ -8,12 +8,14 @@ control_steps:
   min: 50
   max: 500
 blossom_number: 1
-cost_multiplier: 1
+cost_multiplier: 2.0
 w_c: 1
 w_x: 1
 min_cost: 0.1
 checker:
   type: time
-  value: 2       # secs
+  value: 10       # secs
   # repeats: 10     
   repeats: 30 
+goal:
+  total_solutions: 100

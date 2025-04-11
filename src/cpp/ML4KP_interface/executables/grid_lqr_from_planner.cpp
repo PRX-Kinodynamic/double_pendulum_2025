@@ -217,7 +217,7 @@ int main(int argc, char* argv[])
   gtsam::NonlinearFactorGraph graph;
   std::vector<gtsam::Key> Xkeys;
   std::vector<gtsam::Key> Ukeys;
-  const int step_size{ 2 };
+  const int step_size{ 1 };
 
   double_pendulum::create_fg(graph, values, traj, plan, Xkeys, Ukeys, plant_name, step_size);
 
@@ -233,7 +233,7 @@ int main(int argc, char* argv[])
   State xi(Vec(traj.front()));
   double ti{ 0.0 };
 
-  xi = xi + Eigen::Vector4d::Random() * 0.01;
+  // xi = xi + Eigen::Vector4d::Random() * 0.01;
   PRX_DBG_VARS(traj.front(), xi.transpose());
   ss->copy_from(xi);
   prx::trajectory_t fg_traj(ss);

@@ -16,6 +16,7 @@
 #include <prx/utilities/data_structures/regular_grid.hpp>
 
 #include "ML4KP_interface/simulation/acrobot.hpp"
+#include "ML4KP_interface/simulation/acrobot_pid.hpp"
 #include "ML4KP_interface/simulation/pendubot.hpp"
 #include "ML4KP_interface/simulation/utils.hpp"
 #include "ML4KP_interface/simulation/fg_lqr_traj.hpp"
@@ -104,25 +105,25 @@ int main(int argc, char* argv[])
   prx::param_loader params{ argc, argv };
 
   std::string plant_in{};
-  std::string plant_name;
+  std::string plant_name{ params["plant"].as<>() };
 
   // LQRptr lqr;
   if (not params.exists("plant"))
   {
     prx_throw("Need plant param: {acrobot, pendubot} ");
   }
-  if (params["plant"].as<>() == "acrobot")
-  {
-    plant_name = "acrobot_dp";
-  }
-  else if (params["plant"].as<>() == "pendubot")
-  {
-    plant_name = "pendubot_dp";
-  }
-  else
-  {
-    prx_throw("Plant " << params["plant"].as<>() << " not supported.");
-  }
+  // if (params["plant"].as<>() == "acrobot")
+  // {
+  //   plant_name = "acrobot_dp";
+  // }
+  // else if (params["plant"].as<>() == "pendubot")
+  // {
+  //   plant_name = "pendubot_dp";
+  // }
+  // else
+  // {
+  //   prx_throw("Plant " << params["plant"].as<>() << " not supported.");
+  // }
   params.add_opts(argc, argv);
 
   // params.add_filem(plant_in);

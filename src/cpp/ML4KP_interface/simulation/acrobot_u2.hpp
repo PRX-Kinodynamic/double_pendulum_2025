@@ -21,7 +21,7 @@ public:
     , _u(Control::Zero())
     , _integrator("runge_kutta")
     , _dt(0.002)
-    , _plant(false, true)
+    , _plant(true, true)
     , _sim()
     , _length_1(0.2)
     , _length_2(0.3)
@@ -40,9 +40,9 @@ public:
     state_space->set_bounds({ -0.0, 0.0, -25, -25 },  // 540 deg~= 9.42 rad
                             { +2.0 * prx::constants::pi, +2.0 * prx::constants::pi, +25, +25 });
 
-    control_memory = { &_u[1] };
-    input_control_space = new prx::space_t("E", control_memory, "acrobot_ctrl");
-    input_control_space->set_bounds({ -6 }, { 6 });
+    control_memory = { &_u[0], &_u[1] };
+    input_control_space = new prx::space_t("EE", control_memory, "acrobot_ctrl");
+    input_control_space->set_bounds({ -0.5, -6 }, { 0.5, 6 });
 
     // Derivative memory not used.
     derivative_memory = { &_x[2], &_x[3], &_xdd[0], &_xdd[1] };
@@ -122,10 +122,8 @@ public:
     prx_assert(simulation_step > 0, "simulation_step not greater than zero!");
     _sim.set_state(0.0, _x);
 
-    compute_friction_compensation();
-    _u_fric += _u;
-    _xdd = _plant.forward_dynamics(_x, _u_fric);
-    _sim.step(_u_fric, simulation_step, _integrator);
+    _xdd = _plant.forward_dynamics(_x, _u);
+    _sim.step(_u, simulation_step, _integrator);
     _x = _sim.get_state();
     // PRX_DBG_VARS(_x.transpose(), _u[1]);
     // _x[1] += prx::constants::pi;
@@ -158,26 +156,6 @@ public:
     ball->translation() = rod1_ep + rod2->linear() * Vector3(_length_2, 0.0, 0.0);
   }
 
-  void compute_friction_compensation()
-  {
-    const double y_11{ std::atan(100 * _x[2]) };
-    const double y_12{ _x[2] };
-
-    const double y_23{ std::atan(100 * _x[3]) };
-    const double y_24{ _x[3] };
-
-    // yb_fric = np.array([[y_11, y_12, 0, 0],
-    //                     [0, 0, y_23, y_24]])
-
-    Eigen::Matrix<double, 2, 4> friction_regressor_mat;
-    friction_regressor_mat << y_11, y_12, 0, 0,  // no-lint
-        0, 0, y_23, y_24;
-
-    // friction_regressor_mat = yb_friction_matrix([ x[2], x[3] ]);
-    // tau_fric = np.dot(friction_regressor_mat, self.friction_terms);
-    _u_fric = friction_regressor_mat * _friction_terms;
-  }
-
 protected:
   virtual void compute_derivative() override final
   {
@@ -204,4 +182,4 @@ protected:
 };
 }  // namespace double_pendulum
 
-PRX_REGISTER_SYSTEM(double_pendulum::acrobot_t, acrobot_dp)
+PRX_REGISTER_SYSTEM(double_pendulum::acrobot_t, acrobot_u2)

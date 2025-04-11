@@ -11,7 +11,7 @@
 #include <prx/planning/planners/planner.hpp>
 
 #include <prx/visualization/three_js_group.hpp>
-#include "ML4KP_interface/simulation/acrobot.hpp"
+#include "ML4KP_interface/simulation/acrobot_u2.hpp"
 #include "ML4KP_interface/simulation/pendubot.hpp"
 #include "ML4KP_interface/simulation/utils.hpp"
 
@@ -36,7 +36,7 @@ int main(int argc, char* argv[])
   }
   if (params["plant"].as<>() == "acrobot")
   {
-    plant_name = "acrobot_dp";
+    plant_name = "acrobot_u2";
   }
   else if (params["plant"].as<>() == "pendubot")
   {
@@ -66,15 +66,23 @@ int main(int argc, char* argv[])
   prx::plan_t plan{ cs };
   prx::trajectory_t traj{ ss };
 
-  Eigen::Vector4d Qin;
-  double_pendulum::lqr_query_t lqr_query;
+  double_pendulum::lqr_query_t<4, 2> lqr_query;
   // lqr_query.x_goal = Eigen::Vector4d::Zero();
-  ss->copy(Qin, params["Q"].as<std::vector<double>>());
+  std::vector<double> Qin{ params["Q"].as<std::vector<double>>() };
+  std::vector<double> Rin{ params["R"].as<std::vector<double>>() };
   ss->copy(lqr_query.x_goal, params["goal"].as<std::vector<double>>());
-  lqr_query.Q.diagonal() = Qin;
-  lqr_query.R = Eigen::Matrix<double, 1, 1>::Identity() * params["R"].as<double>();
+
+  for (int i = 0; i < 4; ++i)
+  {
+    lqr_query.Q.diagonal()[i] = Qin[i];
+  }
+  for (int i = 0; i < 2; ++i)
+  {
+    lqr_query.R.diagonal()[i] = Rin[i];
+  }
   lqr_query.normalize = params["normalize"].as<bool>();
-  PRX_DBG_VARS(lqr_query.normalize, params["normalize"].as<bool>());
+  // PRX_DBG_VARS(lqr_query.R);
+  // PRX_DBG_VARS(lqr_query.normalize, params["normalize"].as<bool>());
 
   // lqr_query.Q = Eigen::DiagonalMatrix<double, 4>(1.0, 1.0, 10., 10.);
   LQRptr lqr{ double_pendulum::create_lqr(plant, lqr_query) };
@@ -86,10 +94,13 @@ int main(int argc, char* argv[])
   // ss->set_bounds(start, finish);
 
   // const double step{ params["step"].as<double>() };
-
+  PRX_DBG_VARS(lqr_query.R);
+  PRX_DBG_VARS(lqr_query.Q);
   // lqr->lqr().K() = Eigen::RowVector4d(10, 0, 0, 0);
   PRX_DBG_VARS(lqr->lqr().A());
   PRX_DBG_VARS(lqr->lqr().B());
+  PRX_DBG_VARS(lqr->lqr().R());
+  PRX_DBG_VARS(lqr->lqr().Q());
   PRX_DBG_VARS(lqr->lqr().K());
   // do
   // {

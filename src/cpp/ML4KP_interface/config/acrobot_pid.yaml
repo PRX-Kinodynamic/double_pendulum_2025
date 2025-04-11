@@ -1,4 +1,4 @@
-name: "acrobot_dp"
+name: "acrobot_pid"
 simulation_step: 0.002
 state_space:
   lower_bound:
@@ -6,12 +6,18 @@ state_space:
     - 0
     - -25
     - -25
+    - -6
+    - -3000
   upper_bound:
     - 6.2831853072
     - 6.2831853072
     - 25
     - 25
+    - 6
+    - 3000
   values:
+    - 0
+    - 0
     - 0
     - 0
     - 0
@@ -25,9 +31,11 @@ control_space:
     - 0
 parameter_space:
   lower_bound:
-    []
+    [-10]
   upper_bound:
-    []
+    [10]
   values:
-    []
+    [1]
 vis_body: "ball"
+lqr:
+  K: [-218.67, -91.0951, -46.2969, -21.0909, 0, 0]
