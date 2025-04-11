@@ -34,14 +34,15 @@ public:
     set_params();
     _sim.set_plant(_plant);
 
+    const double angle_limit{ 720.0 * prx::constants::pi / 180.0 };
     state_memory = { &_x[0],     &_x[1],  // no-lint
                      &_x[2],     &_x[3],  // no-lint
                      &_u_eff[1], &_pid._integral[0] };
-    state_space = new prx::space_t("RREEEE", state_memory, "acrobot_state");
+    state_space = new prx::space_t("EEEEEE", state_memory, "acrobot_state");
     // state_space->set_bounds({ -9.42, -9.42, -30, -30 },  // 540 deg~= 9.42 rad
     //                         { +9.42, +9.42, +30, +30 });
-    state_space->set_bounds({ -1e50, -1e50, -1e50, -1e50, -6, -1e50 },  // 540 deg~= 9.42 rad
-                            { +1e50, +1e50, +1e50, +1e50, +6, +1e50 });
+    state_space->set_bounds({ -angle_limit, -angle_limit, -25, -25, -6, -3000 },  // 540 deg~= 9.42 rad
+                            { +angle_limit, +angle_limit, +25, +25, +6, +3000 });
 
     control_memory = { &_u[1] };
     input_control_space = new prx::space_t("E", control_memory, "acrobot_ctrl");
