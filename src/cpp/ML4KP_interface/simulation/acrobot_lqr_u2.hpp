@@ -8,7 +8,7 @@
 namespace double_pendulum
 {
 
-class acrobot_u2_t : public prx::plant_t
+class acrobot_lqr_u2_t : public prx::plant_t
 {
   using State = Eigen::Vector4d;
   using StateDDot = Eigen::Vector2d;
@@ -16,7 +16,7 @@ class acrobot_u2_t : public prx::plant_t
   using PID = prx::simulation::pid_t<2>;
 
 public:
-  acrobot_u2_t(const std::string& path)
+  acrobot_lqr_u2_t(const std::string& path)
     : prx::plant_t(path)
     , _x(State::Zero())
     , _u(Control::Zero())
@@ -27,23 +27,19 @@ public:
     , _length_1(0.2)
     , _length_2(0.3)
     , _box_w(0.05)
-    , _pid(PID::Array(0.0, 0.0), PID::Array(0.1, 0.1), PID::Array(0.0, 0.0), PID::Vector(0, 0))
-    , _use_pid(1.0)
   {
     set_params();
     const double angle_limit{ 720.0 * prx::constants::pi / 180.0 };
     _sim.set_plant(_plant);
 
-    state_memory = { &_x[0],     &_x[1],              // no-lint
-                     &_x[2],     &_x[3],              // no-lint
-                     &_u_eff[0], &_pid._integral[0],  // no-lint
-                     &_u_eff[1], &_pid._integral[1] };
+    state_memory = { &_x[0], &_x[1],  // no-lint
+                     &_x[2], &_x[3] };
 
-    state_space = new prx::space_t("EEEEEEEE", state_memory, "acrobot_state");
+    state_space = new prx::space_t("EEEE", state_memory, "acrobot_state");
     // state_space->set_bounds({ -9.42, -9.42, -30, -30 },  // 540 deg~= 9.42 rad
     //                         { +9.42, +9.42, +30, +30 });
-    state_space->set_bounds({ -angle_limit, -angle_limit, -25, -25, -0.5, -6.0, -30000, -30000 },  // 540 deg~= 9.42 rad
-                            { +angle_limit, +angle_limit, +25, +25, +0.5, +6.0, +30000, +30000 });
+    state_space->set_bounds({ -angle_limit, -angle_limit, -25, -25 },  // 540 deg~= 9.42 rad
+                            { +angle_limit, +angle_limit, +25, +25 });
 
     control_memory = { &_u[0], &_u[1] };
     input_control_space = new prx::space_t("EE", control_memory, "acrobot_ctrl");
@@ -53,8 +49,8 @@ public:
     derivative_memory = { &_x[2], &_x[3], &_xdd[0], &_xdd[1] };
     derivative_space = new prx::space_t("EEEE", derivative_memory, "acrobot_dd");
 
-    parameter_memory = { &_use_pid };
-    parameter_space = new prx::space_t("I", parameter_memory, "acrobot_params");
+    parameter_memory = {};
+    parameter_space = new prx::space_t("", parameter_memory, "acrobot_params");
     // const std::string param_topology{ std::string(parameter_memory.size(), 'E') };
 
     geometries["rod1"] = std::make_shared<prx::geometry_t>(prx::geometry_type_t::BOX);
@@ -79,7 +75,7 @@ public:
     configurations["ball"]->setIdentity();
   }
 
-  virtual ~acrobot_u2_t()
+  virtual ~acrobot_lqr_u2_t()
   {
   }
 
@@ -124,17 +120,9 @@ public:
     // _x[1] -= prx::constants::pi;
     prx_assert(simulation_step > 0, "simulation_step not greater than zero!");
     _sim.set_state(0.0, _x);
-    if (_use_pid > 0.0)
-    {
-      _u_eff = _pid(_u_eff, _u);
-    }
-    else
-    {
-      _u_eff = _u;
-    }
 
-    _xdd = _plant.forward_dynamics(_x, _u_eff);
-    _sim.step(_u_eff, simulation_step, _integrator);
+    _xdd = _plant.forward_dynamics(_x, _u);
+    _sim.step(_u, simulation_step, _integrator);
     _x = _sim.get_state();
     // PRX_DBG_VARS(_x.transpose(), _u[1]);
     // _x[1] += prx::constants::pi;
@@ -174,8 +162,6 @@ protected:
 
   State _x;
   Control _u;
-  Control _u_fric;
-  Control _u_eff;
 
   StateDDot _xdd;  // derivative state
 
@@ -190,13 +176,7 @@ protected:
 
   const double _dt;
   const std::string _integrator;
-
-  Eigen::Vector4d _friction_terms;
-
-  PID _pid;
-  double _use_pid;
-  double _dummy;
 };
 }  // namespace double_pendulum
 
-PRX_REGISTER_SYSTEM(double_pendulum::acrobot_u2_t, acrobot_u2)
+PRX_REGISTER_SYSTEM(double_pendulum::acrobot_lqr_u2_t, acrobot_lqr_u2)

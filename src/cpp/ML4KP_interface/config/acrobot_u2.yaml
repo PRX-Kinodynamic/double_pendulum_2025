@@ -1,0 +1,50 @@
+name: "acrobot_u2"
+simulation_step: 0.002
+state_space:
+  lower_bound:
+    - -12.5663706144
+    - -12.5663706144
+    - -25
+    - -25
+    - -0.5
+    - -6
+    - -30000
+    - -30000
+  upper_bound:
+    - 12.5663706144
+    - 12.5663706144
+    - 25
+    - 25
+    - 0.5
+    - 6
+    - 30000
+    - 30000
+  values:
+    - 0
+    - 0
+    - 0
+    - 0
+    - 0
+    - 0
+    - 0
+    - 0
+control_space:
+  lower_bound:
+    - -0.5
+    - -6
+  upper_bound:
+    - 0.5
+    - 6
+  values:
+    - 0
+    - 0
+parameter_space:
+  lower_bound:
+    []
+  upper_bound:
+    []
+  values:
+    []
+vis_body: "ball"
+lqr:
+  K: [-218.67, -91.0951, -46.2969, -21.0909, 0, 0]

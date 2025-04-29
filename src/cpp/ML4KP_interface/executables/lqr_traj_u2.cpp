@@ -14,6 +14,7 @@
 #include "ML4KP_interface/simulation/acrobot_u2.hpp"
 #include "ML4KP_interface/simulation/pendubot.hpp"
 #include "ML4KP_interface/simulation/utils.hpp"
+#include "ML4KP_interface/simulation/acrobot_lqr_u2.hpp"
 
 using LQR = prx::simulation::lqr_controller_t<5, -1>;
 using LQRptr = std::shared_ptr<LQR>;
@@ -36,7 +37,7 @@ int main(int argc, char* argv[])
   }
   if (params["plant"].as<>() == "acrobot")
   {
-    plant_name = "acrobot_u2";
+    plant_name = "acrobot_lqr_u2";
   }
   else if (params["plant"].as<>() == "pendubot")
   {
@@ -138,7 +139,25 @@ int main(int argc, char* argv[])
     ofs_traj.close();
     ofs_plan.close();
   }
-  // } while (pt->step(step));
+  const double res{ lqr_query.diff(Vec(traj.back()), lqr_query.x_goal).norm() };
+  if (res < 0.1)
+  {
+    const std::string msg{ "GOAL_REACHED" };
+    PRX_DBG_VARS(msg);
+  }
+
+  if (params.exists("append"))  // Append to an existing file
+  {
+    std::ofstream ofs_traj(params["append"].as<>(), std::ofstream::app);
+    // PRX_DBG_VARS(traj.size(), plan.size())
+    const std::size_t tot{ plan.size() };
+    ofs_traj << "\n";
+    for (std::size_t i = 0; i < tot; ++i)
+    {
+      ofs_traj << traj[i] << " " << plan[i] << "\n";
+    }
+    ofs_traj.close();
+  }
 
   prx::three_js_group_t* vis_group = new prx::three_js_group_t({ plant }, {});
 
