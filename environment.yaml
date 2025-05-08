@@ -6,7 +6,17 @@ dependencies:
   - yaml-cpp
   - eigenpy
   - cxx-compiler
+  - numpy
+  - matplotlib
+  - tqdm
+  - einops
+  - git
+  - gitpython
+  - scipy
+  - notebook
+  - gh
   - pip:
     - flow_matching
     - einops
     - tqdm
+    - -r requirements.txt

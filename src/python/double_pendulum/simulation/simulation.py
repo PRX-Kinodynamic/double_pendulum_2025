@@ -485,17 +485,20 @@ class Simulator:
         nu = last_u + self.u_responsiveness * (nu - last_u)
 
         # tau noise (unoise)
-        nu = np.random.normal(nu, self.u_noise_sigmas, np.shape(nu))
+        # nu = np.random.normal(nu, self.u_noise_sigmas, np.shape(nu))
 
         nu[0] = np.clip(nu[0], -self.plant.torque_limit[0], self.plant.torque_limit[0])
         nu[1] = np.clip(nu[1], -self.plant.torque_limit[1], self.plant.torque_limit[1])
+
+        if nu[0] != 0.0:
+            breakpoint()
         # perturbance
         # (can exceed joint limits)
-        pert_index = int(t / dt)
-        if pert_index < len(self.perturbation_array[0]):
-            nu[0] += self.perturbation_array[0][pert_index]
-        if pert_index < len(self.perturbation_array[1]):
-            nu[1] += self.perturbation_array[1][pert_index]
+        # pert_index = int(t / dt)
+        # if pert_index < len(self.perturbation_array[0]):
+        #     nu[0] += self.perturbation_array[0][pert_index]
+        # if pert_index < len(self.perturbation_array[1]):
+        #     nu[1] += self.perturbation_array[1][pert_index]
 
         return nu
 
@@ -532,6 +535,9 @@ class Simulator:
         x_meas = self.get_measurement(dt)
         u, realtime = self.get_control_u(controller, x_meas, self.t, dt)
         nu = self.get_real_applied_u(u, self.t, dt)
+
+        if nu[0] != 0.0:
+            breakpoint()
 
         self.step(nu, dt, integrator=integrator)
 
