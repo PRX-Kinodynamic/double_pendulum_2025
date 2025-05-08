@@ -41,6 +41,10 @@ experiments/design_independent/data/*
 experiments/icra_2025/data/*
 *local*
 **/c_generated_code
+trained_models/*
+*local*
+*.egg-info/
+
 
 
 .idea/
